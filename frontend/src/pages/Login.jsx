@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../services/api.js";
 import "../../styles/AdminLoginStyles.css";
 
+// Import image
+import loginHero from "../assets/images/login-hero.jpg";
+
 export default function Login() {
   const nav = useNavigate();
   const [email, setEmail] = useState("");
@@ -10,20 +13,10 @@ export default function Login() {
   const [msg, setMsg] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [focusedInput, setFocusedInput] = useState(null);
   const [isDarkTheme, setIsDarkTheme] = useState(true);
-
-  useEffect(() => {
-    // Add animation classes on mount
-    const loginContainer = document.querySelector('.login-container');
-    if (loginContainer) {
-      loginContainer.classList.add('loaded');
-    }
-  }, []);
 
   const toggleTheme = () => {
     setIsDarkTheme(!isDarkTheme);
-    document.body.classList.toggle('light-theme');
   };
 
   const onSubmit = async (e) => {
@@ -38,13 +31,8 @@ export default function Login() {
         body: JSON.stringify({ email, password }),
       });
 
-      // Save token
       localStorage.setItem("token", data.token);
-
-      // (Optional) store user for UI
       if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
-
-      // Redirect to admin page
       nav("/admin/incidents");
     } catch (err) {
       setMsg(err.message || "Login failed. Please check your credentials.");
@@ -54,174 +42,100 @@ export default function Login() {
   };
 
   return (
-    <div className={`login-container ${isDarkTheme ? 'dark' : 'light'}`}>
-      {/* Background Image */}
-      <div className="background-image"></div>
-      
-      {/* Background Overlay */}
-      <div className="background-overlay"></div>
-
-      {/* Floating Particles */}
-      <div className="floating-particles">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className={`particle particle-${i}`}></div>
-        ))}
-      </div>
-
-      {/* Orange Form Glow Effect */}
-      <div className="orange-form-glow"></div>
-
+    <div className={`app ${isDarkTheme ? 'dark' : 'light'}`}>
       {/* Theme Toggle */}
-      <div className="theme-toggle-container">
-        <button className={`theme-toggle ${isDarkTheme ? 'dark' : 'light'}`} onClick={toggleTheme}>
-          {isDarkTheme ? (
-            <span className="theme-icon">🌙</span>
-          ) : (
-            <span className="theme-icon">☀️</span>
-          )}
-        </button>
-      </div>
+      <button className="theme-btn" onClick={toggleTheme}>
+        {isDarkTheme ? '☀️' : '🌙'}
+      </button>
 
-      <div className="scroll-container">
-        <div className="content">
-          
-          {/* Header Section */}
-          <div className="header">
-            <div className="welcome-text">
-              WELCOME BACK TO
+      {/* Main Container */}
+      <div className="container">
+        {/* Left Side - Form */}
+        <div className="form-side">
+          <div className="form-wrapper">
+            {/* Logo */}
+            <div className="logo">
+              <span className="logo-icon">🚑</span>
+              <span className="logo-text">ResQ<span>Map</span></span>
             </div>
-            
-            <div className="title-container">
-              <h1 className="title">
-                ResQ<span className="title-accent">Map</span>
-              </h1>
-            </div>
-            
-            <div className="subtitle">
-              Login to continue your rescue journey
-            </div>
-          </div>
 
-          {/* Form Section */}
-          <div className={`form-container ${isDarkTheme ? 'dark' : 'light'}`}>
-            <form onSubmit={onSubmit}>
-              <div className="input-container">
-                <label className={`input-label ${isDarkTheme ? 'dark' : 'light'}`}>
-                  Email Address
-                </label>
-                <div className="input-wrapper">
+            {/* Header */}
+            <div className="header">
+              <h1 className="title">Welcome back</h1>
+              <p className="subtitle">Sign in to continue to your dashboard</p>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={onSubmit} className="form">
+              {/* Email */}
+              <div className="field">
+                <label className="label">Email</label>
+                <div className="input-group">
+                  <span className="icon">📧</span>
                   <input
-                    className={`input ${isDarkTheme ? 'dark' : 'light'} ${
-                      focusedInput === 'email' ? 'focused' : ''
-                    }`}
                     type="email"
+                    className="input"
                     placeholder="Enter your email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    onFocus={() => setFocusedInput('email')}
-                    onBlur={() => setFocusedInput(null)}
                     required
                   />
                 </div>
               </div>
 
-              <div className="input-container">
-                <label className={`input-label ${isDarkTheme ? 'dark' : 'light'}`}>
-                  Password
-                </label>
-                <div className="input-wrapper">
+              {/* Password */}
+              <div className="field">
+                <label className="label">Password</label>
+                <div className="input-group">
+                  <span className="icon">🔒</span>
                   <input
-                    className={`input ${isDarkTheme ? 'dark' : 'light'} ${
-                      focusedInput === 'password' ? 'focused' : ''
-                    }`}
                     type={showPassword ? "text" : "password"}
+                    className="input"
                     placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    onFocus={() => setFocusedInput('password')}
-                    onBlur={() => setFocusedInput(null)}
                     required
                   />
                   <button
                     type="button"
-                    className={`password-toggle ${isDarkTheme ? 'dark' : 'light'}`}
+                    className="password-toggle"
                     onClick={() => setShowPassword(!showPassword)}
                   >
-                    {showPassword ? 'HIDE' : 'SHOW'}
+                    {showPassword ? 'Hide' : 'Show'}
                   </button>
                 </div>
               </div>
 
-              {msg && (
-                <div className="error-message">
-                  {msg}
-                </div>
-              )}
+              {/* Options */}
+              <div className="options">
+                <label className="checkbox">
+                  <input type="checkbox" />
+                  <span>Remember me</span>
+                </label>
+                <a href="#" className="forgot-link">Forgot password?</a>
+              </div>
 
-              <button 
-                type="submit" 
-                className="primary-button"
-                disabled={loading}
-              >
-                {loading ? (
-                  <span className="loading-spinner"></span>
-                ) : (
-                  'Log In'
-                )}
+              {/* Error */}
+              {msg && <div className="error">{msg}</div>}
+
+              {/* Submit */}
+              <button type="submit" className="submit-btn" disabled={loading}>
+                {loading ? <div className="spinner"></div> : 'Sign In'}
               </button>
+
+              {/* Signup */}
+              <p className="signup-text">
+                Don't have an account? <a href="/register">Create one</a>
+              </p>
             </form>
           </div>
+        </div>
 
-          {/* Divider */}
-          <div className="divider">
-            <div className={`divider-line ${isDarkTheme ? 'dark' : 'light'}`}></div>
-            <div className={`divider-text ${isDarkTheme ? 'dark' : 'light'}`}>
-              Secure Access
-            </div>
-            <div className={`divider-line ${isDarkTheme ? 'dark' : 'light'}`}></div>
-          </div>
-
-          {/* Features Section */}
-          <div className={`features-container ${isDarkTheme ? 'dark' : 'light'}`}>
-            <div className="features-title">
-              Platform Features
-            </div>
-            <div className="features-grid">
-              <div className="feature-item">
-                <div className="feature-icon-container">
-                  <span className="feature-icon">🚨</span>
-                </div>
-                <div className={`feature-text ${isDarkTheme ? 'dark' : 'light'}`}>
-                  Live Emergency Alerts
-                </div>
-              </div>
-              <div className="feature-item">
-                <div className="feature-icon-container">
-                  <span className="feature-icon">🗺️</span>
-                </div>
-                <div className={`feature-text ${isDarkTheme ? 'dark' : 'light'}`}>
-                  Real-time Rescue Maps
-                </div>
-              </div>
-              <div className="feature-item">
-                <div className="feature-icon-container">
-                  <span className="feature-icon">👥</span>
-                </div>
-                <div className={`feature-text ${isDarkTheme ? 'dark' : 'light'}`}>
-                  Community Coordination
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="footer">
-            <div className={`footer-text ${isDarkTheme ? 'dark' : 'light'}`}>
-              New to ResQMap?
-            </div>
-            <a href="/register" className={`link ${isDarkTheme ? 'dark' : 'light'}`}>
-              Create Your Account
-            </a>
+        {/* Right Side - Image */}
+        <div className="image-side">
+          <div className="image-container">
+            <img src={loginHero} alt="Login" className="image" />
+            <div className="image-overlay"></div>
           </div>
         </div>
       </div>

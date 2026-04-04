@@ -1,34 +1,40 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { AdminIncidentStyles } from "../../styles/AdminIncidentStyling";
+import { AdminIncidentStyles, darkTheme, lightTheme } from "../../styles/AdminIncidentStyling";
 import { apiFetch } from "../services/api.js";
+import ThemeToggle from "./ThemeToggle";
+import { useNavigate } from "react-router-dom";
+
+// Import background images
+import bgImageDark from "../assets/images/bg-image1.jpg";
+import bgImageLight from "../assets/images/bg-image-light.jpg";
 
 export default function AdminIncidentReview() {
-  // "pending" | "verified" | "triaged" | "assigned"
+  const navigate = useNavigate();
   const [tab, setTab] = useState("pending");
-
   const [pending, setPending] = useState([]);
   const [verified, setVerified] = useState([]);
   const [triaged, setTriaged] = useState([]);
-  const [assigned, setAssigned] = useState([]); // ✅ includes triaged too
-
+  const [assigned, setAssigned] = useState([]);
   const [responders, setResponders] = useState([]);
   const [selectedResponder, setSelectedResponder] = useState({});
-
   const [loading, setLoading] = useState(true);
   const [errMsg, setErrMsg] = useState("");
-
   const [verifyingTriagedId, setVerifyingTriagedId] = useState(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [expandedRow, setExpandedRow] = useState(null);
+  const [selectedStat, setSelectedStat] = useState("pending");
 
-  // ✅ Robust date formatter (Firestore Timestamp, {_seconds}, ISO strings, numbers)
+  const theme = isDarkMode ? darkTheme : lightTheme;
+  const styles = AdminIncidentStyles(theme);
+
   const formatDate = (val) => {
     if (!val) return "—";
-
     if (typeof val === "object") {
       if (typeof val.toDate === "function") return val.toDate().toLocaleString();
       if (typeof val._seconds === "number") return new Date(val._seconds * 1000).toLocaleString();
       if (typeof val.seconds === "number") return new Date(val.seconds * 1000).toLocaleString();
     }
-
     const d = new Date(val);
     return isNaN(d.getTime()) ? "—" : d.toLocaleString();
   };
@@ -43,26 +49,12 @@ export default function AdminIncidentReview() {
     setVerified(data.incidents || []);
   }, []);
 
-  /**
-   * ✅ KEY FIX:
-   * /api/incidents/assigned returns:
-   * - triaged
-   * - assigned
-   * - in_progress
-   * - resolved
-   *
-   * We must show triaged in BOTH:
-   *  - Triaged tab (only triaged)
-   *  - Assigned tab (triaged + assigned + in_progress + resolved)
-   */
   const fetchAssigned = useCallback(async () => {
     const data = await apiFetch("/api/incidents/assigned");
     const list = data.incidents || [];
-
     const tri = list.filter((x) => String(x.status || "").toLowerCase() === "triaged");
-
     setTriaged(tri);
-    setAssigned(list); // ✅ do NOT remove triaged from assigned
+    setAssigned(list);
   }, []);
 
   const fetchResponders = useCallback(async () => {
@@ -88,21 +80,20 @@ export default function AdminIncidentReview() {
 
   useEffect(() => {
     refreshAll();
-
-    // ✅ Poll triaged/assigned for progress changes
     const t = setInterval(() => {
       fetchAssigned().catch(() => {});
     }, 8000);
-
     return () => clearInterval(t);
   }, [fetchAssigned, refreshAll]);
+
+  useEffect(() => {
+    setTab(selectedStat);
+  }, [selectedStat]);
 
   const reviewIncident = async (id, decision) => {
     const ok = window.confirm(`Are you sure you want to ${decision.toUpperCase()} this incident?`);
     if (!ok) return;
-
     const severity = prompt("Override severity? (low/medium/high) or leave blank:");
-
     try {
       await apiFetch(`/api/incidents/${id}/review`, {
         method: "PATCH",
@@ -112,15 +103,12 @@ export default function AdminIncidentReview() {
           ...(severity ? { severity } : {}),
         }),
       });
-
       if (decision === "rejected") {
         setPending((prev) => prev.filter((x) => x.id !== id));
         return;
       }
-
       const verifiedItem = pending.find((x) => x.id === id);
       setPending((prev) => prev.filter((x) => x.id !== id));
-
       if (verifiedItem) {
         setVerified((prev) => [
           {
@@ -140,43 +128,33 @@ export default function AdminIncidentReview() {
   const assignIncident = async (incidentId) => {
     const responderId = selectedResponder[incidentId];
     if (!responderId) return alert("Select a responder first");
-
     try {
       await apiFetch(`/api/incidents/${incidentId}/assign`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ responderId }),
       });
-
       alert("Incident assigned ✅");
-
       setVerified((prev) => prev.filter((x) => x.id !== incidentId));
-
-      // safest to refresh from server (keeps triaged/assigned consistent)
       await fetchAssigned();
+      setExpandedRow(null);
     } catch (err) {
       alert(err?.message || "Failed to assign incident");
     }
   };
 
-  /**
-   * ✅ Verify triaged = ONLY status change: triaged -> assigned
-   * No re-assign.
-   */
   const verifyTriagedIncident = async (incidentId) => {
     const ok = window.confirm("Verify this triaged incident and move it to Assigned?");
     if (!ok) return;
-
     try {
       setVerifyingTriagedId(incidentId);
       setErrMsg("");
-
       await apiFetch(`/api/incidents/${incidentId}/verify-triaged`, {
         method: "PATCH",
       });
-
       await fetchAssigned();
       alert("Triaged incident verified ✅");
+      setExpandedRow(null);
     } catch (err) {
       alert(err?.message || "Failed to verify triaged incident");
     } finally {
@@ -185,13 +163,27 @@ export default function AdminIncidentReview() {
   };
 
   const rows = useMemo(() => {
-    if (tab === "pending") return pending;
-    if (tab === "verified") return verified;
-    if (tab === "triaged") return triaged;
+    let data = [];
+    if (tab === "pending") data = pending;
+    if (tab === "verified") data = verified;
+    if (tab === "triaged") data = triaged;
+    if (tab === "assigned") data = assigned;
 
-    // ✅ Assigned tab should show triaged too (so responder activity is visible)
-    return assigned;
-  }, [assigned, pending, tab, triaged, verified]);
+    return data.filter(incident => {
+      return searchTerm === "" || 
+        incident.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        incident.fullAddress?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        incident.type?.toLowerCase().includes(searchTerm.toLowerCase());
+    });
+  }, [assigned, pending, tab, triaged, verified, searchTerm]);
+
+  const stats = useMemo(() => ({
+    pending: pending.length,
+    verified: verified.length,
+    triaged: triaged.length,
+    assigned: assigned.length,
+    resolved: assigned.filter((i) => String(i.status || "").toLowerCase() === "resolved").length
+  }), [pending, verified, triaged, assigned]);
 
   const statusLabel = (s) => {
     const v = String(s || "").toLowerCase();
@@ -208,7 +200,6 @@ export default function AdminIncidentReview() {
   const responderName = (incident) => {
     if (incident.assignedResponder?.name) return incident.assignedResponder.name;
     if (incident.assignedResponder?.email) return incident.assignedResponder.email;
-
     const rid = incident.assignedTo || incident.triagedBy;
     const r = responders.find((x) => x.id === rid);
     return r?.name || r?.email || (rid ? rid : "—");
@@ -216,388 +207,377 @@ export default function AdminIncidentReview() {
 
   const getSeverityColor = (severity) => {
     switch (String(severity || "").toLowerCase()) {
-      case "high":
-        return "#FF3B30";
-      case "medium":
-        return "#FFA500";
-      case "low":
-        return "#4CAF50";
-      default:
-        return "#999";
+      case "high": return "#FF3B30";
+      case "medium": return "#FFA500";
+      case "low": return "#4CAF50";
+      default: return "#999";
     }
   };
 
   const getStatusColor = (status) => {
     switch (String(status || "").toLowerCase()) {
-      case "pending_review":
-        return "#FFA500";
-      case "verified":
-        return "#4CAF50";
-      case "triaged":
-        return "#8B5CF6";
-      case "assigned":
-        return "#FF6B35";
-      case "in_progress":
-        return "#FF6B35";
-      case "resolved":
-        return "#4CAF50";
-      case "rejected":
-        return "#FF3B30";
-      default:
-        return "#999";
+      case "pending_review": return "#FFA500";
+      case "verified": return "#4CAF50";
+      case "triaged": return "#8B5CF6";
+      case "assigned": return "#FF6B35";
+      case "in_progress": return "#FF6B35";
+      case "resolved": return "#4CAF50";
+      case "rejected": return "#FF3B30";
+      default: return "#999";
     }
   };
 
-  const resolvedCount = assigned.filter((i) => String(i.status || "").toLowerCase() === "resolved").length;
+  const toggleRow = (id) => {
+    setExpandedRow(expandedRow === id ? null : id);
+  };
+
+  const handleStatClick = (statName) => {
+    setSelectedStat(statName);
+  };
 
   return (
-    <div style={AdminIncidentStyles.container}>
+    <div style={styles.container}>
+      {/* Background Image */}
+      <div style={styles.backgroundContainer}>
+        <img 
+          src={isDarkMode ? bgImageDark : bgImageLight} 
+          alt="Background" 
+          style={styles.backgroundImage}
+        />
+        <div style={styles.overlay}></div>
+      </div>
+
+      {/* Theme Toggle */}
+      <div style={styles.themeToggle}>
+        <ThemeToggle isDark={isDarkMode} onToggle={() => setIsDarkMode(!isDarkMode)} />
+      </div>
+
       {/* Header */}
-      <div style={AdminIncidentStyles.header}>
-        <div style={AdminIncidentStyles.titleContainer}>
-          <h1 style={AdminIncidentStyles.title}>
-            ResQ<span style={AdminIncidentStyles.titleAccent}>Admin</span>
+      <div style={styles.header}>
+        <div style={styles.headerLeft}>
+          <h1 style={styles.title}>
+            ResQ<span style={styles.titleAccent}>Admin</span>
           </h1>
-          <p style={AdminIncidentStyles.subtitle}>Incident Management Panel</p>
+          <p style={styles.subtitle}>Incident Management Dashboard</p>
         </div>
 
-        {/* ✅ Added navigation buttons */}
-        <div
-          style={{
-            display: "flex",
-            gap: "12px",
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <button
-            onClick={() => (window.location.href = "/admin/incidents")}
-            style={{
-              padding: "10px 18px",
-              borderRadius: "10px",
-              border: "1px solid #1e40af",
-              background: "#2563eb",
-              color: "#fff",
-              fontWeight: 600,
-              cursor: "pointer",
-              boxShadow: "0 4px 12px rgba(37, 99, 235, 0.25)",
-            }}
+        <div style={styles.headerRight}>
+          <button 
+            style={styles.primaryButton}
+            onClick={() => navigate("/admin/incidents")}
           >
-            Review Incidents
+            <span>📋</span> Review Incidents
           </button>
-
-          <button
-            onClick={() => (window.location.href = "/admin/reports")}
-            style={{
-              padding: "10px 18px",
-              borderRadius: "10px",
-              border: "1px solid #0f766e",
-              background: "#14b8a6",
-              color: "#fff",
-              fontWeight: 600,
-              cursor: "pointer",
-              boxShadow: "0 4px 12px rgba(20, 184, 166, 0.25)",
-            }}
+          <button 
+            style={styles.secondaryButton}
+            onClick={() => navigate("/admin/reports")}
           >
-            Reports
+            <span>📊</span> Reports
           </button>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={AdminIncidentStyles.tabsContainer}>
-        <button
-          onClick={() => setTab("pending")}
+      {/* Clickable Stats Bar */}
+      <div style={styles.statsBar}>
+        <div 
           style={{
-            ...AdminIncidentStyles.tabButton,
-            ...(tab === "pending" ? AdminIncidentStyles.tabButtonActive : {}),
+            ...styles.statItem,
+            ...(selectedStat === "pending" ? styles.activeStat : {})
           }}
+          onClick={() => handleStatClick("pending")}
         >
-          <span>Pending Review</span>
-          <span style={AdminIncidentStyles.tabBadge}>{pending.length}</span>
-        </button>
-
-        <button
-          onClick={() => setTab("verified")}
+          <span style={styles.statLabel}>Pending</span>
+          <span style={styles.statValue}>{stats.pending}</span>
+          <span style={styles.statTrend}>+12%</span>
+        </div>
+        <div style={styles.statDivider}></div>
+        <div 
           style={{
-            ...AdminIncidentStyles.tabButton,
-            ...(tab === "verified" ? AdminIncidentStyles.tabButtonActive : {}),
+            ...styles.statItem,
+            ...(selectedStat === "verified" ? styles.activeStat : {})
           }}
+          onClick={() => handleStatClick("verified")}
         >
-          <span>Verified</span>
-          <span style={AdminIncidentStyles.tabBadge}>{verified.length}</span>
-        </button>
-
-        <button
-          onClick={() => setTab("triaged")}
+          <span style={styles.statLabel}>Verified</span>
+          <span style={{...styles.statValue, color: theme.success}}>{stats.verified}</span>
+          <span style={styles.statTrend}>+8%</span>
+        </div>
+        <div style={styles.statDivider}></div>
+        <div 
           style={{
-            ...AdminIncidentStyles.tabButton,
-            ...(tab === "triaged" ? AdminIncidentStyles.tabButtonActive : {}),
+            ...styles.statItem,
+            ...(selectedStat === "triaged" ? styles.activeStat : {})
           }}
+          onClick={() => handleStatClick("triaged")}
         >
-          <span>Triaged</span>
-          <span style={AdminIncidentStyles.tabBadge}>{triaged.length}</span>
-        </button>
-
-        <button
-          onClick={() => setTab("assigned")}
+          <span style={styles.statLabel}>Triaged</span>
+          <span style={{...styles.statValue, color: theme.purple}}>{stats.triaged}</span>
+          <span style={styles.statTrend}>+5%</span>
+        </div>
+        <div style={styles.statDivider}></div>
+        <div 
           style={{
-            ...AdminIncidentStyles.tabButton,
-            ...(tab === "assigned" ? AdminIncidentStyles.tabButtonActive : {}),
+            ...styles.statItem,
+            ...(selectedStat === "assigned" ? styles.activeStat : {})
           }}
+          onClick={() => handleStatClick("assigned")}
         >
-          <span>Assigned</span>
-          <span style={AdminIncidentStyles.tabBadge}>{assigned.length}</span>
-        </button>
+          <span style={styles.statLabel}>Assigned</span>
+          <span style={{...styles.statValue, color: theme.primary}}>{stats.assigned}</span>
+          <span style={styles.statTrend}>+15%</span>
+        </div>
+        <div style={styles.statDivider}></div>
+        <div 
+          style={{
+            ...styles.statItem,
+            ...(selectedStat === "resolved" ? styles.activeStat : {})
+          }}
+          onClick={() => handleStatClick("resolved")}
+        >
+          <span style={styles.statLabel}>Resolved</span>
+          <span style={{...styles.statValue, color: theme.success}}>{stats.resolved}</span>
+          <span style={styles.statTrend}>+7%</span>
+        </div>
+      </div>
 
-        <button onClick={refreshAll} style={AdminIncidentStyles.refreshButton}>
-          <span style={AdminIncidentStyles.refreshIcon}>↻</span>
+      {/* Controls */}
+      <div style={styles.controls}>
+        <div style={styles.search}>
+          <span style={styles.searchIcon}>🔍</span>
+          <input
+            type="text"
+            placeholder="Search incidents..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={styles.searchInput}
+          />
+          {searchTerm && (
+            <button style={styles.clearSearch} onClick={() => setSearchTerm("")}>
+              ✕
+            </button>
+          )}
+        </div>
+
+        <button onClick={refreshAll} style={styles.refreshButton}>
+          <span style={styles.refreshIcon}>↻</span>
           Refresh
         </button>
       </div>
 
-      {/* Stats Summary */}
-      <div style={AdminIncidentStyles.statsContainer}>
-        <div style={AdminIncidentStyles.statCard}>
-          <div style={AdminIncidentStyles.statValue}>{pending.length}</div>
-          <div style={AdminIncidentStyles.statLabel}>Pending Review</div>
-        </div>
-        <div style={AdminIncidentStyles.statCard}>
-          <div style={{ ...AdminIncidentStyles.statValue, color: "#4CAF50" }}>{verified.length}</div>
-          <div style={AdminIncidentStyles.statLabel}>Verified</div>
-        </div>
-        <div style={AdminIncidentStyles.statCard}>
-          <div style={{ ...AdminIncidentStyles.statValue, color: "#8B5CF6" }}>{triaged.length}</div>
-          <div style={AdminIncidentStyles.statLabel}>Triaged</div>
-        </div>
-        <div style={AdminIncidentStyles.statCard}>
-          <div style={{ ...AdminIncidentStyles.statValue, color: "#FF6B35" }}>{assigned.length}</div>
-          <div style={AdminIncidentStyles.statLabel}>Assigned</div>
-        </div>
-        <div style={AdminIncidentStyles.statCard}>
-          <div style={{ ...AdminIncidentStyles.statValue, color: "#4CAF50" }}>{resolvedCount}</div>
-          <div style={AdminIncidentStyles.statLabel}>Resolved</div>
-        </div>
-      </div>
-
-      {/* Loading State */}
-      {loading && (
-        <div style={AdminIncidentStyles.loadingContainer}>
-          <div style={AdminIncidentStyles.loadingSpinner}></div>
-          <p style={AdminIncidentStyles.loadingText}>Loading incidents...</p>
-        </div>
-      )}
-
-      {/* Error Message */}
-      {errMsg && (
-        <div style={AdminIncidentStyles.errorContainer}>
-          <span style={AdminIncidentStyles.errorIcon}>⚠️</span>
-          <span style={AdminIncidentStyles.errorText}>{errMsg}</span>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {!loading && !errMsg && rows.length === 0 && (
-        <div style={AdminIncidentStyles.emptyContainer}>
-          <div style={AdminIncidentStyles.emptyIcon}>📋</div>
-          <h3 style={AdminIncidentStyles.emptyTitle}>No records found</h3>
-          <p style={AdminIncidentStyles.emptyText}>
-            {tab === "pending" && "No pending incidents to review."}
-            {tab === "verified" && "No verified incidents to assign."}
-            {tab === "triaged" && "No triaged incidents at the moment."}
-            {tab === "assigned" && "No assigned incidents at the moment."}
-          </p>
-        </div>
-      )}
-
       {/* Table */}
-      {!loading && !errMsg && rows.length > 0 && (
-        <div style={AdminIncidentStyles.tableContainer}>
-          <table style={AdminIncidentStyles.table}>
-            <thead style={AdminIncidentStyles.tableHead}>
+      {!loading && !errMsg && (
+        <div style={styles.tableContainer}>
+          <table style={styles.table}>
+            <thead>
               <tr>
-                <th style={AdminIncidentStyles.tableHeader}>Type</th>
-                <th style={AdminIncidentStyles.tableHeader}>Description</th>
-                <th style={AdminIncidentStyles.tableHeader}>Severity</th>
-                <th style={AdminIncidentStyles.tableHeader}>Address</th>
-                <th style={AdminIncidentStyles.tableHeader}>Image</th>
-
-                {tab === "pending" && <th style={AdminIncidentStyles.tableHeader}>Actions</th>}
-                {tab !== "pending" && <th style={AdminIncidentStyles.tableHeader}>Status</th>}
-                {tab === "verified" && <th style={AdminIncidentStyles.tableHeader}>Assign Responder</th>}
-                {tab === "triaged" && <th style={AdminIncidentStyles.tableHeader}>Verify Triaged</th>}
-
-                {(tab === "triaged" || tab === "assigned") && (
-                  <>
-                    <th style={AdminIncidentStyles.tableHeader}>Responder</th>
-                    <th style={AdminIncidentStyles.tableHeader}>Progress</th>
-                    <th style={AdminIncidentStyles.tableHeader}>{tab === "triaged" ? "Triaged At" : "Last Updated"}</th>
-                  </>
-                )}
+                <th style={styles.th}>Type</th>
+                <th style={styles.th}>Description</th>
+                <th style={styles.th}>Severity</th>
+                <th style={styles.th}>Location</th>
+                <th style={styles.th}>Status</th>
+                <th style={styles.th}></th>
               </tr>
             </thead>
-
             <tbody>
-              {rows.map((i, index) => (
-                <tr
-                  key={i.id}
-                  style={{
-                    ...AdminIncidentStyles.tableRow,
-                    animation: `slideIn 0.3s ease ${index * 0.05}s both`,
-                  }}
-                >
-                  <td style={AdminIncidentStyles.tableCell}>
-                    <span style={AdminIncidentStyles.incidentType}>{i.type || "—"}</span>
-                  </td>
-
-                  <td style={AdminIncidentStyles.tableCell}>
-                    <div style={AdminIncidentStyles.descriptionCell}>
-                      {(i.description || "").slice(0, 80)}
-                      {(i.description || "").length > 80 && (
-                        <span style={AdminIncidentStyles.truncated}>...</span>
-                      )}
-                    </div>
-                  </td>
-
-                  <td style={AdminIncidentStyles.tableCell}>
-                    {i.severity ? (
-                      <span
-                        style={{
-                          ...AdminIncidentStyles.severityBadge,
-                          backgroundColor: getSeverityColor(i.severity) + "20",
-                          color: getSeverityColor(i.severity),
-                        }}
-                      >
-                        {i.severity}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-
-                  <td style={AdminIncidentStyles.tableCell}>
-                    <div style={AdminIncidentStyles.addressCell}>{i.fullAddress || "—"}</div>
-                  </td>
-
-                  <td style={AdminIncidentStyles.tableCell}>
-                    {i.imageUrl ? (
-                      <a
-                        href={i.imageUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={AdminIncidentStyles.imageLink}
-                      >
-                        <span style={AdminIncidentStyles.imageIcon}>🖼️</span>
-                        View Image
-                      </a>
-                    ) : (
-                      <span style={AdminIncidentStyles.noImage}>—</span>
-                    )}
-                  </td>
-
-                  {tab === "pending" && (
-                    <td style={AdminIncidentStyles.tableCell}>
-                      <div style={AdminIncidentStyles.actionButtons}>
-                        <button onClick={() => reviewIncident(i.id, "verified")} style={AdminIncidentStyles.verifyButton}>
-                          ✓ Verify
-                        </button>
-                        <button onClick={() => reviewIncident(i.id, "rejected")} style={AdminIncidentStyles.rejectButton}>
-                          ✗ Reject
-                        </button>
-                      </div>
+              {rows.map((incident) => (
+                <>
+                  <tr 
+                    key={incident.id} 
+                    style={styles.tr}
+                    onClick={() => toggleRow(incident.id)}
+                  >
+                    <td style={styles.td}>
+                      <span style={styles.incidentType}>{incident.type || "Incident"}</span>
                     </td>
-                  )}
-
-                  {tab !== "pending" && (
-                    <td style={AdminIncidentStyles.tableCell}>
-                      <span
-                        style={{
-                          ...AdminIncidentStyles.statusBadge,
-                          backgroundColor: getStatusColor(i.status) + "20",
-                          color: getStatusColor(i.status),
-                        }}
-                      >
-                        {statusLabel(i.status)}
+                    <td style={styles.td}>
+                      <span style={styles.description}>
+                        {(incident.description || "").slice(0, 60)}
+                        {(incident.description || "").length > 60 && "..."}
                       </span>
                     </td>
-                  )}
-
-                  {tab === "verified" && (
-                    <td style={AdminIncidentStyles.tableCell}>
-                      <div style={AdminIncidentStyles.assignContainer}>
-                        <select
-                          value={selectedResponder[i.id] || ""}
-                          onChange={(e) =>
-                            setSelectedResponder((prev) => ({
-                              ...prev,
-                              [i.id]: e.target.value,
-                            }))
-                          }
-                          style={AdminIncidentStyles.selectInput}
-                        >
-                          <option value="">Select responder</option>
-                          {responders.map((r) => (
-                            <option key={r.id} value={r.id}>
-                              {r.name || r.email}
-                            </option>
-                          ))}
-                        </select>
-
-                        <button onClick={() => assignIncident(i.id)} style={AdminIncidentStyles.assignButton}>
-                          Assign
-                        </button>
-                      </div>
-                    </td>
-                  )}
-
-                  {tab === "triaged" && (
-                    <td style={AdminIncidentStyles.tableCell}>
-                      <button
-                        onClick={() => verifyTriagedIncident(i.id)}
-                        style={{
-                          ...AdminIncidentStyles.assignButton,
-                          opacity: verifyingTriagedId === i.id ? 0.7 : 1,
-                        }}
-                        disabled={verifyingTriagedId === i.id}
-                      >
-                        {verifyingTriagedId === i.id ? "Verifying..." : "✓ Verify"}
-                      </button>
-                    </td>
-                  )}
-
-                  {(tab === "triaged" || tab === "assigned") && (
-                    <>
-                      <td style={AdminIncidentStyles.tableCell}>
-                        <div style={AdminIncidentStyles.responderCell}>
-                          <span style={AdminIncidentStyles.responderIcon}>👤</span>
-                          {responderName(i)}
-                        </div>
-                      </td>
-
-                      <td style={AdminIncidentStyles.tableCell}>
-                        <span
-                          style={{
-                            ...AdminIncidentStyles.progressBadge,
-                            backgroundColor: getStatusColor(i.status) + "20",
-                            color: getStatusColor(i.status),
-                          }}
-                        >
-                          {statusLabel(i.status)}
+                    <td style={styles.td}>
+                      {incident.severity && (
+                        <span style={{
+                          ...styles.severity,
+                          backgroundColor: getSeverityColor(incident.severity) + "20",
+                          color: getSeverityColor(incident.severity)
+                        }}>
+                          {incident.severity}
                         </span>
-                      </td>
+                      )}
+                    </td>
+                    <td style={styles.td}>
+                      <span style={styles.location}>
+                        <span style={styles.locationIcon}>📍</span>
+                        {(incident.fullAddress || "").slice(0, 30)}
+                        {(incident.fullAddress || "").length > 30 && "..."}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{
+                        ...styles.status,
+                        backgroundColor: getStatusColor(incident.status) + "20",
+                        color: getStatusColor(incident.status)
+                      }}>
+                        {statusLabel(incident.status)}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={styles.expandIcon}>
+                        {expandedRow === incident.id ? "▼" : "▶"}
+                      </span>
+                    </td>
+                  </tr>
+                  
+                  {/* Expanded Row */}
+                  {expandedRow === incident.id && (
+                    <tr style={styles.expandedRow}>
+                      <td colSpan="6" style={styles.expandedContent}>
+                        <div style={styles.detailsGrid}>
+                          <div style={styles.detailsSection}>
+                            <h4 style={styles.detailsTitle}>Incident Details</h4>
+                            <p style={styles.detailsText}>
+                              <strong>Full Description:</strong> {incident.description || "No description"}
+                            </p>
+                            <p style={styles.detailsText}>
+                              <strong>Full Address:</strong> {incident.fullAddress || "Not available"}
+                            </p>
+                            <p style={styles.detailsText}>
+                              <strong>Created:</strong> {formatDate(incident.createdAt)}
+                            </p>
+                            <p style={styles.detailsText}>
+                              <strong>Last Updated:</strong> {formatDate(incident.updatedAt)}
+                            </p>
+                          </div>
 
-                      <td style={AdminIncidentStyles.tableCell}>
-                        <div style={AdminIncidentStyles.dateCell}>
-                          <span style={AdminIncidentStyles.dateIcon}>🕒</span>
-                          {tab === "triaged" ? formatDate(i.triagedAt) : formatDate(i.updatedAt)}
+                          {incident.imageUrl && (
+                            <div style={styles.detailsSection}>
+                              <h4 style={styles.detailsTitle}>Image</h4>
+                              <a href={incident.imageUrl} target="_blank" rel="noreferrer" style={styles.imageLink}>
+                                <img src={incident.imageUrl} alt="Incident" style={styles.previewImage} />
+                              </a>
+                            </div>
+                          )}
+
+                          <div style={styles.detailsSection}>
+                            <h4 style={styles.detailsTitle}>Actions</h4>
+                            
+                            {tab === "pending" && (
+                              <div style={styles.actionButtons}>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    reviewIncident(incident.id, "verified");
+                                  }} 
+                                  style={styles.verifyBtn}
+                                >
+                                  ✓ Verify Incident
+                                </button>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    reviewIncident(incident.id, "rejected");
+                                  }} 
+                                  style={styles.rejectBtn}
+                                >
+                                  ✗ Reject Incident
+                                </button>
+                              </div>
+                            )}
+
+                            {tab === "verified" && (
+                              <div style={styles.assignSection}>
+                                <select
+                                  value={selectedResponder[incident.id] || ""}
+                                  onChange={(e) =>
+                                    setSelectedResponder((prev) => ({
+                                      ...prev,
+                                      [incident.id]: e.target.value,
+                                    }))
+                                  }
+                                  style={styles.responderSelect}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <option value="">Select Responder</option>
+                                  {responders.map((r) => (
+                                    <option key={r.id} value={r.id}>
+                                      {r.name || r.email}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    assignIncident(incident.id);
+                                  }} 
+                                  style={styles.assignBtn}
+                                >
+                                  Assign Incident
+                                </button>
+                              </div>
+                            )}
+
+                            {tab === "triaged" && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  verifyTriagedIncident(incident.id);
+                                }}
+                                style={{
+                                  ...styles.verifyTriagedBtn,
+                                  opacity: verifyingTriagedId === incident.id ? 0.7 : 1
+                                }}
+                                disabled={verifyingTriagedId === incident.id}
+                              >
+                                {verifyingTriagedId === incident.id ? "Verifying..." : "✓ Verify & Assign"}
+                              </button>
+                            )}
+
+                            {(tab === "triaged" || tab === "assigned") && (
+                              <div style={styles.responderInfo}>
+                                <p style={styles.detailsText}>
+                                  <strong>Assigned Responder:</strong> {responderName(incident)}
+                                </p>
+                                <p style={styles.detailsText}>
+                                  <strong>Progress:</strong> {statusLabel(incident.status)}
+                                </p>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </td>
-                    </>
+                    </tr>
                   )}
-                </tr>
+                </>
               ))}
             </tbody>
           </table>
+
+          {rows.length === 0 && (
+            <div style={styles.emptyState}>
+              <span style={styles.emptyIcon}>📋</span>
+              <h3 style={styles.emptyTitle}>No incidents found</h3>
+              <p style={styles.emptyText}>
+                {searchTerm ? "Try adjusting your search" : `No ${tab} incidents at the moment`}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Loading State */}
+      {loading && (
+        <div style={styles.loadingContainer}>
+          <div style={styles.loadingSpinner}></div>
+          <p style={styles.loadingText}>Loading incidents...</p>
+        </div>
+      )}
+
+      {/* Error State */}
+      {errMsg && (
+        <div style={styles.errorContainer}>
+          <span style={styles.errorIcon}>⚠️</span>
+          <span style={styles.errorText}>{errMsg}</span>
         </div>
       )}
     </div>
