@@ -141,7 +141,7 @@ export const submitIncident = async (req, res) => {
             originalType: type,
           },
         },
-        { timeout: 12000 }
+        { timeout: 60000 }
       );
 
       // ai-service returns: { label, confidence, source, meta }
