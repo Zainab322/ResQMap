@@ -1,4 +1,4 @@
-const API_ORIGIN = "http://localhost:5000"; // change if your backend port differs
+const API_ORIGIN = "https://resqmap-backend-gon7.onrender.com";
 
 export async function apiFetch(path, options = {}) {
   const token = localStorage.getItem("token");
