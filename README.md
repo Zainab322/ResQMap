@@ -1,13 +1,21 @@
 
 # ResQMap – AI-Powered Disaster Response System
 
+![React](https://img.shields.io/badge/React-19-blue)
+![Node.js](https://img.shields.io/badge/Node.js-Express-green)
+![Firebase](https://img.shields.io/badge/Firebase-Firestore-orange)
+![PyTorch](https://img.shields.io/badge/PyTorch-DeepLearning-red)
+![DistilBERT](https://img.shields.io/badge/Model-DistilBERT-purple)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
 ---
 
 ## Overview
 
 ResQMap is an AI-powered disaster and incident management platform designed to improve emergency response through real-time reporting, intelligent severity analysis, and efficient coordination between citizens, responders, and administrators.
 
-We developed this system to bridge the gap between incident reporting and actionable emergency response using AI and cloud-based technologies.
+We developed this system to bridge the gap between incident reporting and actionable emergency response using AI and cloud-based technologies. 
+
+This is a collaborative Final Year Project developed by a team of three Software Engineering students, combining Artificial Intelligence, cloud technologies, and modern web development to support faster, data-driven emergency response.
 
 ---
 
@@ -235,14 +243,14 @@ npm run dev
 
 ## Contributors
 
+- Syeda Zainab Rashid
 - Ayesha Naseem  
-- Syeda Zainab
 - Alishba Shabbir  
 
 ---
 
 ## Conclusion
 
-Through ResQMap, we demonstrate how AI and modern web technologies can be integrated to build a scalable disaster response system. The platform enhances coordination, automates severity analysis, and improves emergency decision-making.
+ResQMap demonstrates how Artificial Intelligence, Natural Language Processing, and modern cloud technologies can be combined to build an intelligent disaster management platform. By transforming real-time incident reports into actionable insights, the system supports faster, more informed emergency response while showcasing the potential of AI to solve meaningful real-world problems.
 
 ---
